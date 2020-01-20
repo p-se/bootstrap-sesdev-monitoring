@@ -1,0 +1,99 @@
+#!/usr/bin/env bash
+
+install_node_exporter() {
+	fsid=$(ceph -s --format=json | jq -r .fsid)
+	ne_name="node-exporter.ceph.com"
+	for node in $(ceph orchestrator host ls --format=json | jq -r '.[].host') ; do
+		ssh $node "export CEPHADM_IMAGE='prom/node-exporter:latest'; cephadm deploy \
+			--name $ne_name \
+			--fsid $fsid"
+		ssh $node "sed -i 's/--memory\s[[:digit:]]GB\s*//g' /var/lib/ceph/$fsid/$ne_name/unit.run"
+		ssh $node "systemctl daemon-reload"
+		ssh $node "systemctl start ceph-$fsid@$ne_name"
+		ssh $node "systemctl status ceph-$fsid@$ne_name"
+	done
+}
+
+install_tools() {
+	for node in $(ceph orchestrator host ls --format=json | jq -r '.[].host') ; do
+		# fzf
+		ssh $node git clone --depth 1 https://github.com/junegunn/fzf.git ~/.fzf
+		ssh $node bash ~/.fzf/install --all # --all prevents any user interaction
+		# ripgrep
+		ssh $node zypper -n in ripgrep ripgrep-bash-completion ripgrep-zsh-completion
+		# zsh
+		ssh $node zypper -n in zsh
+		ssh $node "cd /tmp ; \
+			curl -O https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh && \
+			CHSH=no RUNZSH=no sh install.sh && \
+			chsh -s $(which zsh)"
+		ssh $node "sed -i 's/# DISABLE_AUTO_UPDATE/DISABLE_AUTO_UPDATE/g' /root/.zshrc"
+		# vim 
+		ssh $node 'echo "ino jk <esc>\nnn H ^\nnn L $\nset ai si et sw=4 ts=4 sts=4\nsyntax enable" > /root/.vimrc'
+	done
+}
+
+install_prometheus() {
+	read -r -d '' prometheus_json <<'EOF'
+{
+	"prometheus.yml": [
+		"global:",
+		"  scrape_interval: 5s",
+		"  evaluation_interval: 10s",
+		"",
+		"rule_files: ",
+		"  - '/etc/prometheus/alerting/*'",
+		"",
+		"scrape_configs:",
+		"  - job_name: 'prometheus'",
+		"    static_configs:",
+		"      - targets: ['localhost:9095']",
+		"  - job_name: 'node-exporter'",
+		"    static_configs:",
+		"      - targets:",
+		"         - admin:9100",
+		"         - node1:9100",
+		"         - node2:9100"
+	]
+}
+EOF
+	nodes=(admin)
+	fsid=$(ceph -s --format=json | jq -r .fsid)
+	tmp_config_file="/tmp/prometheus.json"
+	prom_name="prometheus.admin.com"
+	for node in $nodes ; do
+		echo "$prometheus_json" | ssh $node -T "cat > $tmp_config_file"
+		ssh $node "export CEPHADM_IMAGE='prom/prometheus:latest'; cephadm deploy \
+			--name $prom_name \
+			--fsid $(ceph -s --format=json | jq -r .fsid) \
+			--config-json /tmp/prometheus.json"
+		ssh $node "sed -i 's/--memory\s[[:digit:]]*GB\s*//g' /var/lib/ceph/$fsid/$prom_name/unit.run"
+        ssh $node "systemctl daemon-reload"
+        ssh $node "systemctl start ceph-$fsid@$prom_name"
+        ssh $node "systemctl status ceph-$fsid@$prom_name"
+	done
+}
+
+deactivate_apparmor() {
+	for node in $(ceph orchestrator host ls --format=json | jq -r '.[].host') ; do
+		ssh $node "sed -i 's/^GRUB_CMDLINE_LINUX_DEFAULT.*$/GRUB_CMDLINE_LINUX_DEFAULT=\"apparmor=0 security=\"/g' /etc/default/grub"
+		ssh $node update-bootloader
+	done
+}
+
+reboot_all() {
+    for node in $(ceph orchestrator host ls --format=json | jq -r '.[].host') ; do
+        if [[ "$node" != "admin" ]] ; then
+            ssh $node reboot
+        fi
+    done
+    ssh admin reboot
+}
+
+run_all() {
+	deactivate_apparmor
+	# todo reboot?
+	install_tools
+	install_prometheus
+	install_node_exporter
+}
