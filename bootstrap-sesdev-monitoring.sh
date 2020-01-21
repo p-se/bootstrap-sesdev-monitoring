@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+reboot_required=false
+
 install_node_exporter() {
 	fsid=$(ceph -s --format=json | jq -r .fsid)
 	ne_name="node-exporter.ceph.com"
@@ -34,29 +36,29 @@ install_tools() {
 }
 
 install_prometheus() {
-	read -r -d '' prometheus_json <<'EOF'
-{
-	"prometheus.yml": [
-		"global:",
-		"  scrape_interval: 5s",
-		"  evaluation_interval: 10s",
-		"",
-		"rule_files: ",
-		"  - '/etc/prometheus/alerting/*'",
-		"",
-		"scrape_configs:",
-		"  - job_name: 'prometheus'",
-		"    static_configs:",
-		"      - targets: ['localhost:9095']",
-		"  - job_name: 'node-exporter'",
-		"    static_configs:",
-		"      - targets:",
-		"         - admin:9100",
-		"         - node1:9100",
-		"         - node2:9100"
-	]
-}
-EOF
+	read -r -d '' prometheus_json <<-EOF
+	{
+		"prometheus.yml": [
+			"global:",
+			"  scrape_interval: 5s",
+			"  evaluation_interval: 10s",
+			"",
+			"rule_files: ",
+			"  - '/etc/prometheus/alerting/*'",
+			"",
+			"scrape_configs:",
+			"  - job_name: 'prometheus'",
+			"    static_configs:",
+			"      - targets: ['localhost:9095']",
+			"  - job_name: 'node-exporter'",
+			"    static_configs:",
+			"      - targets:",
+			"         - admin:9100",
+			"         - node1:9100",
+			"         - node2:9100"
+		]
+	}
+	EOF
 	nodes=(admin)
 	fsid=$(ceph -s --format=json | jq -r .fsid)
 	tmp_config_file="/tmp/prometheus.json"
@@ -76,24 +78,62 @@ EOF
 
 deactivate_apparmor() {
 	for node in $(ceph orchestrator host ls --format=json | jq -r '.[].host') ; do
-		ssh $node "sed -i 's/^GRUB_CMDLINE_LINUX_DEFAULT.*$/GRUB_CMDLINE_LINUX_DEFAULT=\"apparmor=0 security=\"/g' /etc/default/grub"
+		cmd=$(
+			base64 -w0 <<-EOF
+				awk -i inplace '
+					/GRUB_CMDLINE_LINUX_DEFAULT.*apparmor=0/{next}
+					{
+						gsub(/GRUB_CMDLINE_LINUX_DEFAULT="/, "GRUB_CMDLINE_LINUX_DEFAULT=\42apparmor=0 security= ")
+						print
+					}
+				' /etc/default/grub
+			EOF
+		)
+        ssh $node "echo $cmd | base64 -d | bash"
 		ssh $node update-bootloader
+        reboot_required=true
 	done
+}
+
+activate_cgroup_memory() {
+    for node in $(ceph orchestrator host ls --format=json | jq -r '.[].host') ; do
+		cmd=$(
+			base64 -w0 <<-EOF
+				awk -i inplace '
+					/GRUB_CMDLINE_LINUX.*cgroup_enable=memory/{next}
+					{
+						gsub(/GRUB_CMDLINE_LINUX="/, "GRUB_CMDLINE_LINUX=\42cgroup_enable=memory swapaccount=1 ")
+						print
+					}
+				' /etc/default/grub
+			EOF
+		)
+        ssh $node "echo $cmd | base64 -d | bash" 
+        reboot_required=true
+    done
 }
 
 reboot_all() {
     for node in $(ceph orchestrator host ls --format=json | jq -r '.[].host') ; do
         if [[ "$node" != "admin" ]] ; then
+			echo "rebooting $node"
             ssh $node reboot
         fi
     done
+	echo "rebooting $admin"
     ssh admin reboot
 }
 
 run_all() {
 	deactivate_apparmor
-	# todo reboot?
 	install_tools
 	install_prometheus
 	install_node_exporter
+	if [[ "$reboot_required" == "true" ]] ; then
+		echo "Reboot of all machines required, do you want to reboot now?"
+		read a
+		if [[ "$a" == "yes" || "$a" == "y" ]] ; then
+			reboot_all
+		fi
+	fi
 }
