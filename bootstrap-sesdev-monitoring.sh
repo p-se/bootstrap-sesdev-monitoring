@@ -120,7 +120,7 @@ reboot_all() {
             ssh $node reboot
         fi
     done
-    echo "rebooting $admin"
+    echo "rebooting admin"
     ssh admin reboot
 }
 
