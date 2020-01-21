@@ -18,11 +18,7 @@ install_node_exporter() {
 
 install_tools() {
     for node in $(ceph orchestrator host ls --format=json | jq -r '.[].host') ; do
-        # fzf
-        ssh $node git clone --depth 1 https://github.com/junegunn/fzf.git ~/.fzf
-        ssh $node bash ~/.fzf/install --all # --all prevents any user interaction
-        # ripgrep
-        ssh $node zypper -n in ripgrep ripgrep-bash-completion ripgrep-zsh-completion
+        ssh $node zypper ref
         # zsh
         ssh $node zypper -n in zsh
         ssh $node "cd /tmp ; \
@@ -30,6 +26,11 @@ install_tools() {
 			CHSH=no RUNZSH=no sh install.sh && \
         chsh -s $(which zsh)"
         ssh $node "sed -i 's/# DISABLE_AUTO_UPDATE/DISABLE_AUTO_UPDATE/g' /root/.zshrc"
+        # fzf
+        ssh $node git clone --depth 1 https://github.com/junegunn/fzf.git ~/.fzf
+        ssh $node bash ~/.fzf/install --all # --all prevents any user interaction
+        # ripgrep
+        ssh $node zypper -n in ripgrep ripgrep-bash-completion ripgrep-zsh-completion
         # vim
         ssh $node 'echo "ino jk <esc>\nnn H ^\nnn L $\nset ai si et sw=4 ts=4 sts=4\nsyntax enable" > /root/.vimrc'
     done
