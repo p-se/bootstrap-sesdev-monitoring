@@ -81,7 +81,7 @@ deactivate_apparmor() {
 		cmd=$(
 			base64 -w0 <<-EOF
 				awk -i inplace '
-					/GRUB_CMDLINE_LINUX_DEFAULT.*apparmor=0/{next}
+					/GRUB_CMDLINE_LINUX_DEFAULT.*apparmor=0/{print; next}
 					{
 						gsub(/GRUB_CMDLINE_LINUX_DEFAULT="/, "GRUB_CMDLINE_LINUX_DEFAULT=\42apparmor=0 security= ")
 						print
@@ -100,7 +100,7 @@ activate_cgroup_memory() {
 		cmd=$(
 			base64 -w0 <<-EOF
 				awk -i inplace '
-					/GRUB_CMDLINE_LINUX.*cgroup_enable=memory/{next}
+					/GRUB_CMDLINE_LINUX.*cgroup_enable=memory/{print; next}
 					{
 						gsub(/GRUB_CMDLINE_LINUX="/, "GRUB_CMDLINE_LINUX=\42cgroup_enable=memory swapaccount=1 ")
 						print
@@ -126,6 +126,7 @@ reboot_all() {
 
 run_all() {
 	deactivate_apparmor
+	activate_cgroup_memory
 	install_tools
 	install_prometheus
 	install_node_exporter
