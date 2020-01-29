@@ -9,9 +9,6 @@ install_node_exporter() {
         ssh $node "export CEPHADM_IMAGE='prom/node-exporter:latest'; cephadm deploy \
 			--name $ne_name \
         --fsid $fsid"
-        # ssh $node "sed -i 's/--memory\s[[:digit:]]GB\s*//g' /var/lib/ceph/$fsid/$ne_name/unit.run"
-        # ssh $node "systemctl daemon-reload"
-        # ssh $node "systemctl start ceph-$fsid@$ne_name"
         ssh $node "systemctl status ceph-$fsid@$ne_name"
     done
 }
@@ -70,28 +67,13 @@ install_prometheus() {
 			--name $prom_name \
 			--fsid $(ceph -s --format=json | jq -r .fsid) \
         --config-json /tmp/prometheus.json"
-        # ssh $node "sed -i 's/--memory\s[[:digit:]]*GB\s*//g' /var/lib/ceph/$fsid/$prom_name/unit.run"
-        # ssh $node "systemctl daemon-reload"
-        # ssh $node "systemctl start ceph-$fsid@$prom_name"
         ssh $node "systemctl status ceph-$fsid@$prom_name"
     done
 }
 
-deactivate_apparmor() {
+fix_apparmor() {
     for node in $(ceph orchestrator host ls --format=json | jq -r '.[].host') ; do
-        cmd=$(
-			base64 -w0 <<-EOF
-				awk -i inplace '
-					/GRUB_CMDLINE_LINUX_DEFAULT.*apparmor=0/{print; next}
-					{
-						gsub(/GRUB_CMDLINE_LINUX_DEFAULT="/, "GRUB_CMDLINE_LINUX_DEFAULT=\42apparmor=0 security= ")
-						print
-					}
-				' /etc/default/grub
-			EOF
-        )
-        ssh $node "echo $cmd | base64 -d | bash"
-        ssh $node update-bootloader
+        ssh $node zypper -n in apparmor-profiles
         reboot_required=true
     done
 }
@@ -126,7 +108,7 @@ reboot_all() {
 }
 
 prepare_all() {
-    deactivate_apparmor
+    fix_apparmor
     activate_cgroup_memory
     if [[ "$reboot_required" == "true" ]] ; then
         echo "Reboot of all machines required, do you want to reboot now?"
@@ -139,6 +121,7 @@ prepare_all() {
 
 deploy_all() {
     install_tools
+    prepare_all
     install_prometheus
     install_node_exporter
 }
