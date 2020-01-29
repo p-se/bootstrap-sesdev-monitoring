@@ -78,6 +78,13 @@ fix_apparmor() {
     done
 }
 
+fix_podman() {
+    for node in $(ceph orchestrator host ls --format=json | jq -r '.[].host') ; do
+        ssh $node zypper -n in podman-cni-config
+        reboot_required=true
+    done
+}
+
 activate_cgroup_memory() {
     for node in $(ceph orchestrator host ls --format=json | jq -r '.[].host') ; do
         cmd=$(
@@ -107,9 +114,7 @@ reboot_all() {
     ssh admin reboot
 }
 
-prepare_all() {
-    fix_apparmor
-    activate_cgroup_memory
+check_reboot_required() {
     if [[ "$reboot_required" == "true" ]] ; then
         echo "Reboot of all machines required, do you want to reboot now?"
         read a
@@ -117,6 +122,13 @@ prepare_all() {
             reboot_all
         fi
     fi
+}
+
+prepare_all() {
+    fix_apparmor
+    fix_podman
+    activate_cgroup_memory
+    check_reboot_required
 }
 
 deploy_all() {
