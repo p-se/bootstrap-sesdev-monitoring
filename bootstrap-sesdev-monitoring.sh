@@ -115,7 +115,7 @@ install_tools() {
     for node in $(ceph orchestrator host ls --format=json | jq -r '.[].host') ; do
         ssh $node zypper ref
         # zsh
-        ssh $node zypper -n in zsh
+        ssh $node zypper -n in zsh vim-data
         ssh $node "cd /tmp ; \
 			curl -O https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh && \
 			CHSH=no RUNZSH=no sh install.sh && \
