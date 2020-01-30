@@ -104,7 +104,7 @@ install_grafana() {
     ]
 }
 EOF
-    echo "$grafana_json" > /tmp/grafana_json.json
+    echo "$grafana_json" > /tmp/grafana.json
     CEPHADM_IMAGE='pcuzner/ceph-grafana-el8:latest' cephadm deploy \
       --name grafana.admin.com \
       --fsid $(ceph fsid) \
