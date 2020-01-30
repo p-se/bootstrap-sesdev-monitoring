@@ -164,7 +164,7 @@ install_prometheus() {
         ssh $node "export CEPHADM_IMAGE='prom/prometheus:latest'; cephadm deploy \
 			--name $prom_name \
 			--fsid $(ceph -s --format=json | jq -r .fsid) \
-        --config-json /tmp/prometheus.json"
+            --config-json /tmp/prometheus.json"
         ssh $node "systemctl status ceph-$fsid@$prom_name"
     done
 }
