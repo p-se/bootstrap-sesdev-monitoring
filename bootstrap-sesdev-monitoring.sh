@@ -127,7 +127,7 @@ install_tools() {
         # ripgrep
         ssh $node zypper -n in ripgrep ripgrep-bash-completion ripgrep-zsh-completion
         # vim
-        ssh $node 'echo "ino jk <esc>\nnn H ^\nnn L $\nset ai si et sw=4 ts=4 sts=4\nsyntax enable" > /root/.vimrc'
+        ssh $node 'echo "ino jk <esc>\nnn H ^\nnn L $\nset ai si et sw=4 ts=4 sts=4 hlsearch\nsyntax enable" > /root/.vimrc'
     done
 }
 
